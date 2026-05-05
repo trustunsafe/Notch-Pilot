@@ -530,13 +530,20 @@ final class ClaudeMonitor: ObservableObject {
         var counts: [String: Int] = [:]
         for pid in ProcessLookup.allPIDs() where pid > 0 {
             let name = ProcessLookup.name(of: pid) ?? ""
-            let nameMatches = name.lowercased() == "claude"
+            let lowerName = name.lowercased()
+            // claude-code v2.x ships a Bun-bundled native binary named
+            // `claude.exe` under `@anthropic-ai/claude-code/bin/`. Older
+            // installs use the Node shim named `claude`.
+            let nameMatches = lowerName == "claude" || lowerName == "claude.exe"
             var pathMatches = false
             if !nameMatches {
                 if let exePath = ProcessLookup.path(of: pid)?.lowercased() {
                     pathMatches = exePath.contains("/claude/versions/")
+                        || exePath.contains("/@anthropic-ai/claude-code/")
                         || exePath.hasSuffix("/claude")
                         || exePath.hasSuffix("/bin/claude")
+                        || exePath.hasSuffix("/claude.exe")
+                        || exePath.hasSuffix("/bin/claude.exe")
                 }
             }
             guard nameMatches || pathMatches else { continue }
