@@ -211,8 +211,20 @@ final class NotchWindow: NSPanel {
     // buttons (Enter / Esc on Allow / Deny) and typing in the filter
     // bar stop working. Button clicks still work because they fire
     // on mouse events regardless of key state.
-    override var canBecomeKey: Bool { false }
+    //
+    // Exception: while the user types a free-text answer to an
+    // AskUserQuestion, the panel may become key so the TextField gets
+    // keystrokes. Turned off again as soon as the question is resolved.
+    static var acceptsKeyboard = false
+    override var canBecomeKey: Bool { NotchWindow.acceptsKeyboard }
     override var canBecomeMain: Bool { false }
+
+    /// Grab / release keyboard focus for free-text answers.
+    static func setKeyboardFocus(_ on: Bool) {
+        acceptsKeyboard = on
+        guard let w = NSApp.windows.first(where: { $0 is NotchWindow }) else { return }
+        if on { w.makeKey() } else if w.isKeyWindow { w.resignKey() }
+    }
 
     // MARK: - Frame helpers
 

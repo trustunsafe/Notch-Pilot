@@ -68,7 +68,7 @@ The collapsed pill carries one of six animated buddies — eyes, orb, waves, gho
 
 When Claude asks for permission to run a command, the notch expands into a structured view of the request. Shell commands get a code block. File edits get a red/green diff. URLs get a parsed host/path split. You get **Deny**, **Allow**, and **Always allow `<Tool>`** — the "always allow" path writes to `~/.claude/settings.json` so Claude Code honors it natively next time.
 
-`AskUserQuestion` gets the same treatment: each option becomes a clickable button.
+`AskUserQuestion` gets the same treatment: every question in the batch, one at a time, with multi-select and an "Other…" free-text answer. Answers go back to Claude as a normal tool result.
 
 <p align="center">
   <img src="./docs/permission.png" alt="Permission prompt rendered inside the notch" width="720" />

@@ -161,7 +161,13 @@ enum HookClient {
         let decision: [String: Any]
         switch behavior {
         case "allow":
-            decision = ["behavior": "allow"]
+            // `updatedInput` is used to answer AskUserQuestion natively
+            // (original tool_input + `answers`).
+            if let updated = respObj["updatedInput"] as? [String: Any] {
+                decision = ["behavior": "allow", "updatedInput": updated]
+            } else {
+                decision = ["behavior": "allow"]
+            }
         case "deny":
             decision = ["behavior": "deny", "message": message]
         default:

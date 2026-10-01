@@ -2060,88 +2060,10 @@ struct NotchContentView: View {
         )
     }
 
-    @ViewBuilder
-    private func questionBody(_ permission: PendingPermission) -> some View {
-        let q = permission.question
-
-        VStack(alignment: .leading, spacing: 10) {
-            if !q.isEmpty {
-                Text(q)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundColor(.white.opacity(0.9))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            ScrollView {
-                VStack(spacing: 6) {
-                    ForEach(permission.askOptions) { option in
-                        Button {
-                            hookBridge.selectQuestionOption(permission, option: option)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(option.label)
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                if let desc = option.description, !desc.isEmpty {
-                                    Text(desc)
-                                        .font(.system(size: 10, design: .rounded))
-                                        .foregroundColor(.white.opacity(0.6))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                    .fill(accent.opacity(0.18))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 9)
-                                            .strokeBorder(accentBorder, lineWidth: 0.5)
-                                    )
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .frame(maxHeight: 220)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-        )
-
-        Spacer(minLength: 0)
-
-        Button { hookBridge.deny(permission) } label: {
-            Text("Cancel")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.white.opacity(0.08))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9)
-                                .strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5)
-                        )
-                )
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(.cancelAction)
-    }
-
     private func permissionPanel(_ permission: PendingPermission) -> some View {
         let shape = surfaceShape(bottomCornerRadius: 28)
 
-        let isQuestion = permission.isAskUserQuestion && !permission.askOptions.isEmpty
+        let isQuestion = permission.isAskUserQuestion && !permission.askQuestions.isEmpty
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
@@ -2179,7 +2101,14 @@ struct NotchContentView: View {
             }
 
             if isQuestion {
-                questionBody(permission)
+                AskQuestionsView(
+                    permission: permission,
+                    accent: accent,
+                    accentBorder: accentBorder,
+                    onSubmit: { hookBridge.submitAnswers(permission, answers: $0) },
+                    onCancel: { hookBridge.deny(permission) }
+                )
+                .id(permission.id)
             } else {
                 standardPermissionBody(permission)
             }

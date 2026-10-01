@@ -229,22 +229,17 @@ final class HookBridge: ObservableObject {
         resolve(permission, behavior: "deny")
     }
 
-    /// AskUserQuestion is a tool Claude uses to ask the user multiple-choice
-    /// questions. Claude Code's hook system has no "answer" path for it, but
-    /// the PermissionRequest deny `message` field is surfaced to the model
-    /// as tool feedback. So we deny the tool and phrase the message as a
-    /// direct answer — the LLM reads it and continues as if the tool ran.
-    func selectQuestionOption(_ permission: PendingPermission, option: AskOption) {
-        let answer: String
-        if let desc = option.description, !desc.isEmpty {
-            answer = "\(option.label) — \(desc)"
-        } else {
-            answer = option.label
-        }
-        let message = "The user answered your AskUserQuestion via the Notch Pilot UI. Their answer: \"\(answer)\". Treat this as if the tool had returned this selection and continue."
+    /// Answer an AskUserQuestion natively: allow the tool with
+    /// `updatedInput` = original input + `answers` ({question text: answer}).
+    /// Claude Code returns these as a normal tool result for every question
+    /// in the batch — including multi-select and free-text answers — rather
+    /// than the previous deny-with-message workaround.
+    func submitAnswers(_ permission: PendingPermission, answers: [String: String]) {
+        var updated = permission.toolInput
+        updated["answers"] = answers
         permission.respond(SocketServer.Response(payload: [
-            "behavior": "deny",
-            "message": message
+            "behavior": "allow",
+            "updatedInput": updated
         ]))
         removeFromQueue(id: permission.id)
     }
@@ -338,6 +333,15 @@ struct AskOption: Identifiable, Hashable {
     let description: String?
 }
 
+/// One question of an AskUserQuestion batch (1–4 per call).
+struct AskQuestion: Identifiable {
+    let id: Int
+    let text: String
+    let header: String
+    let options: [AskOption]
+    let multiSelect: Bool
+}
+
 struct PendingPermission: Identifiable {
     let id: UUID
     let toolName: String
@@ -376,8 +380,7 @@ struct PendingPermission: Identifiable {
 
     /// The first question dict — Claude Code's AskUserQuestion takes a
     /// `questions: [{question, header, options: [{label, description}]}]`
-    /// array. We only surface the first one in the notch UI; if the model
-    /// really wants to ask more, it will do so in follow-up turns.
+    /// array. Used for the legacy single-question fallback.
     private var firstQuestion: [String: Any]? {
         if let arr = toolInput["questions"] as? [[String: Any]], let first = arr.first {
             return first
@@ -395,6 +398,30 @@ struct PendingPermission: Identifiable {
         if let q = toolInput["prompt"] as? String { return q }
         if let q = toolInput["header"] as? String { return q }
         return ""
+    }
+
+    /// Every question in the batch, not just the first.
+    /// Falls back to the legacy single-question shape.
+    var askQuestions: [AskQuestion] {
+        if let arr = toolInput["questions"] as? [[String: Any]] {
+            let parsed: [AskQuestion] = arr.enumerated().compactMap { idx, q in
+                let text = (q["question"] as? String) ?? (q["prompt"] as? String) ?? ""
+                let header = (q["header"] as? String) ?? ""
+                let opts = parseOptionList(q["options"]) ?? []
+                guard !(text.isEmpty && header.isEmpty), !opts.isEmpty else { return nil }
+                return AskQuestion(
+                    id: idx,
+                    text: text.isEmpty ? header : text,
+                    header: header,
+                    options: opts,
+                    multiSelect: (q["multiSelect"] as? Bool) ?? false
+                )
+            }
+            if !parsed.isEmpty { return parsed }
+        }
+        let opts = askOptions
+        guard !opts.isEmpty else { return [] }
+        return [AskQuestion(id: 0, text: question, header: "", options: opts, multiSelect: false)]
     }
 
     var askOptions: [AskOption] {
