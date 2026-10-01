@@ -68,6 +68,10 @@ final class UsageAggregator: ObservableObject {
     /// instead of hammering the endpoint every retry tick.
     private var rateLimitedUntil: Date?
     private var refreshTask: Task<Void, Never>?
+    /// When the jsonl scan last ran. The scan reads every transcript from
+    /// the past week (hundreds of MB for heavy users), so it's throttled to
+    /// `refreshInterval` independently of the fast API retry below.
+    private var lastScannedAt: Date?
     private var periodicTask: Task<Void, Never>?
 
     /// Start a background loop that refreshes every 60s so data is
@@ -120,10 +124,16 @@ final class UsageAggregator: ObservableObject {
         let startedAt = Date()
         print("[Usage] refresh start · liveCached=\(live == nil ? "no" : "yes")")
 
+        // While there's no live reading we retry the API every
+        // `retryInterval` (10 s), but the local scan doesn't need that — and
+        // with an expired/missing token `live` can stay nil indefinitely,
+        // which used to rescan all transcripts every 10 s and pin a core.
+        let shouldScan = lastScannedAt.map {
+            Date().timeIntervalSince($0) >= refreshInterval
+        } ?? true
+
         refreshTask = Task { [weak self] in
-            async let scanned = Task.detached(priority: .utility) {
-                Self.scan()
-            }.value
+            async let scanned = Self.scanIfNeeded(shouldScan)
             async let fetched = UsageAPI.fetchUsage()
 
             let result = await scanned
@@ -132,9 +142,12 @@ final class UsageAggregator: ObservableObject {
             await MainActor.run {
                 guard let self = self else { return }
                 let elapsed = Date().timeIntervalSince(startedAt)
-                self.last5h = result.last5h
-                self.today = result.today
-                self.week = result.week
+                if let result {
+                    self.last5h = result.last5h
+                    self.today = result.today
+                    self.week = result.week
+                    self.lastScannedAt = Date()
+                }
                 switch outcome {
                 case .success(let liveUsage):
                     self.live = liveUsage
@@ -164,6 +177,16 @@ final class UsageAggregator: ObservableObject {
     }
 
     // MARK: - Scan (runs off main)
+
+    /// `nil` when the scan is skipped (throttled). Runs off the main actor.
+    private nonisolated static func scanIfNeeded(_ needed: Bool) async -> (
+        last5h: Window,
+        today: Window,
+        week: Window
+    )? {
+        guard needed else { return nil }
+        return await Task.detached(priority: .utility) { Self.scan() }.value
+    }
 
     private nonisolated static func scan() -> (
         last5h: Window,
