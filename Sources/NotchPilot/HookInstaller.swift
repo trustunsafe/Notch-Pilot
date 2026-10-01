@@ -50,9 +50,16 @@ enum HookInstaller {
     }
 
     private static func updateClaudeSettings(at path: String, legacyScriptPath: String) {
+        // Never clobber a settings file we can't parse — previously we
+        // fell back to {} and overwrote the whole file with just our hooks.
         var settings: [String: Any] = [:]
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        if FileManager.default.fileExists(atPath: path) {
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                print("[NotchPilot] settings.json unreadable — hooks not installed")
+                return
+            }
             settings = parsed
         }
 
@@ -75,7 +82,7 @@ enum HookInstaller {
                     guard let cmd = hook["command"] as? String else { return true }
                     let isOursButStale =
                         cmd.contains(legacyScriptPath)
-                        || (cmd.hasSuffix(" --hook") && cmd != command)
+                        || (cmd.hasSuffix(" --hook") && cmd != command && isNotchPilot(cmd))
                     return !isOursButStale
                 }
                 if kept.count == inner.count { return entry }
@@ -116,10 +123,21 @@ enum HookInstaller {
                 withJSONObject: settings,
                 options: [.prettyPrinted, .sortedKeys]
             )
-            try data.write(to: URL(fileURLWithPath: path))
+            let backup = path + ".bak-notchpilot"
+            if FileManager.default.fileExists(atPath: path),
+               !FileManager.default.fileExists(atPath: backup) {
+                try FileManager.default.copyItem(atPath: path, toPath: backup)
+            }
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
             print("[NotchPilot] Registered hook (\(command)) in \(path)")
         } catch {
             print("[NotchPilot] settings.json update failed: \(error)")
         }
+    }
+
+    /// Only treat a `--hook` command as ours if it points at a Notch Pilot
+    /// binary, so other tools' `… --hook` entries are left alone.
+    private static func isNotchPilot(_ cmd: String) -> Bool {
+        cmd.contains("NotchPilot") || cmd.contains("Notch Pilot")
     }
 }
