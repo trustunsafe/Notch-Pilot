@@ -289,9 +289,6 @@ enum TerminalJumper {
     }
 
     private static func runProcess(_ path: String, _ args: [String]) -> String? {
-        let task = Process()
-        task.launchPath = path
-        task.arguments = args
         // Inherit a useful PATH so tmux and other tools are findable
         // even when running from a sandboxed .app bundle.
         var env = ProcessInfo.processInfo.environment
@@ -303,25 +300,15 @@ enum TerminalJumper {
         ]
         let existingPath = env["PATH"] ?? "/usr/bin:/bin"
         env["PATH"] = (extraPaths + [existingPath]).joined(separator: ":")
-        task.environment = env
-        let out = Pipe()
-        task.standardOutput = out
-        let err = Pipe()
-        task.standardError = err
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            print("[NotchPilot] runProcess failed: \(path) \(args) error: \(error)")
+        guard let result = ProcessRunner.run(path, args, environment: env) else {
+            print("[NotchPilot] runProcess failed: \(path) \(args)")
             return nil
         }
-        if task.terminationStatus != 0 {
-            let errData = err.fileHandleForReading.readDataToEndOfFile()
-            let errStr = String(data: errData, encoding: .utf8) ?? ""
-            print("[NotchPilot] runProcess exit \(task.terminationStatus): \(path) \(args) stderr: \(errStr)")
+        if result.status != 0 {
+            let errStr = String(data: result.stderr, encoding: .utf8) ?? ""
+            print("[NotchPilot] runProcess exit \(result.status): \(path) \(args) stderr: \(errStr)")
         }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+        return String(data: result.stdout, encoding: .utf8)
     }
 
     private static func fallbackTerminalApp() -> NSRunningApplication? {

@@ -553,20 +553,9 @@ final class ClaudeMonitor: ObservableObject {
     }
 
     private func countClaudeProcesses() -> Int {
-        let task = Process()
-        task.launchPath = "/usr/bin/pgrep"
-        task.arguments = ["-fl", "claude"]
-        let out = Pipe()
-        task.standardOutput = out
-        task.standardError = Pipe()
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return 0
-        }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        guard let text = String(data: data, encoding: .utf8) else { return 0 }
+        guard let result = ProcessRunner.run("/usr/bin/pgrep", ["-fl", "claude"]),
+              let text = String(data: result.stdout, encoding: .utf8)
+        else { return 0 }
 
         return text.split(whereSeparator: \.isNewline).filter { line in
             let s = String(line).lowercased()
